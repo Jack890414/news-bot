@@ -21,38 +21,49 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const RSS_FEEDS = [
-  // 台灣新聞
+const TW_FEEDS = [
   { name: '中央社', url: 'https://www.cna.com.tw/RSS/RSS_Index.aspx' },
   { name: '自由時報', url: 'https://news.ltn.com.tw/rss/all.xml' },
-  // 國際新聞（中文）
+];
+
+const INTL_FEEDS = [
   { name: 'BBC中文', url: 'https://feeds.bbci.co.uk/zhongwen/trad/rss.xml' },
   { name: '法廣中文', url: 'https://www.rfi.fr/tw/rss' },
 ];
 
-async function fetchNews() {
-  const allNews = [];
-  for (const feed of RSS_FEEDS) {
+async function fetchFromFeeds(feeds, count) {
+  const news = [];
+  for (const feed of feeds) {
     try {
       const parsed = await rssParser.parseURL(feed.url);
-      const items = parsed.items.slice(0, 5).map(item => ({
+      const items = parsed.items.slice(0, count).map(item => ({
         source: feed.name,
         title: item.title,
         summary: item.contentSnippet || item.content || '',
       }));
-      allNews.push(...items);
+      news.push(...items);
+      if (news.length >= count) break;
     } catch (err) {
       console.error(`Failed to fetch ${feed.name}:`, err.message);
     }
   }
-  return allNews;
+  return news.slice(0, count);
+}
+
+async function fetchNews() {
+  const [twNews, intlNews] = await Promise.all([
+    fetchFromFeeds(TW_FEEDS, 5),
+    fetchFromFeeds(INTL_FEEDS, 5),
+  ]);
+  return { twNews, intlNews };
 }
 
 async function generateNewsSummary(timeLabel) {
-  const news = await fetchNews();
-  if (news.length === 0) return '目前無法取得新聞，請稍後再試。';
+  const { twNews, intlNews } = await fetchNews();
+  if (twNews.length === 0 && intlNews.length === 0) return '目前無法取得新聞，請稍後再試。';
 
-  const newsText = news.map(n => `【${n.source}】${n.title}\n${n.summary}`).join('\n\n');
+  const twText = twNews.map(n => `【${n.source}】${n.title}\n${n.summary}`).join('\n\n');
+  const intlText = intlNews.map(n => `【${n.source}】${n.title}\n${n.summary}`).join('\n\n');
 
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
@@ -60,15 +71,27 @@ async function generateNewsSummary(timeLabel) {
     messages: [
       {
         role: 'user',
-        content: `你是戰地記者強尼，以下是最新新聞。請整理成${timeLabel}新聞完整報導，用繁體中文，挑選5則最重要的新聞，每則包含：
+        content: `你是戰地記者強尼，以下是最新新聞。請整理成${timeLabel}完整報導，用繁體中文。
+
+格式如下：
+
+🇹🇼 台灣新聞（5則）
+從台灣新聞來源中挑選5則最重要的，每則包含：
 1. 📌 標題
-2. 詳細內容說明（3-5句話，說清楚事件背景、發展、影響）
-3. 💬 強尼點評（你的專業分析與看法，1-2句）
+2. 詳細內容（3-5句，說清楚背景、發展、影響）
+3. 💬 強尼點評（1-2句專業分析）
+新聞間用「──────」分隔
 
-新聞之間用分隔線隔開，風格像資深戰地記者，直接、有力、有深度。
+🌍 國際新聞（5則）
+從國際新聞來源中挑選5則最重要的，格式同上。
 
-新聞來源：
-${newsText}`,
+風格像資深戰地記者，直接、有力、有深度。
+
+台灣新聞來源：
+${twText}
+
+國際新聞來源：
+${intlText}`,
       },
     ],
   });
