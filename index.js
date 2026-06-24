@@ -56,11 +56,16 @@ async function generateNewsSummary(timeLabel) {
 
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 1500,
+    max_tokens: 3000,
     messages: [
       {
         role: 'user',
-        content: `你是戰地記者強尼，以下是最新新聞，請整理成${timeLabel}新聞重點摘要，用繁體中文，條列式呈現5-8則最重要的新聞，每則加上簡短評論。風格俐落有力，像老練記者的語氣。
+        content: `你是戰地記者強尼，以下是最新新聞。請整理成${timeLabel}新聞完整報導，用繁體中文，挑選5則最重要的新聞，每則包含：
+1. 📌 標題
+2. 詳細內容說明（3-5句話，說清楚事件背景、發展、影響）
+3. 💬 強尼點評（你的專業分析與看法，1-2句）
+
+新聞之間用分隔線隔開，風格像資深戰地記者，直接、有力、有深度。
 
 新聞來源：
 ${newsText}`,
